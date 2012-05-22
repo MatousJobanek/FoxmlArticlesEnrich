@@ -34,16 +34,15 @@ import org.xml.sax.SAXException;
 import cz.mzk.FoxmlArticlesEnrich.Constants.DigitalObjectModel;
 import cz.mzk.FoxmlArticlesEnrich.Constants.FedoraRelationship;
 
+/**
+ * @author Matous Jobanek
+ * 
+ */
 public class Main {
 
-	// "/home/job/Desktop/testConverted";
-	private static final String DIR_PATH = "/home/job/Desktop/ANLConverting/converted";
+	public static String dirPath = "";
 
-	private static final String SUFFIX = "xml";
-
-	private static final String DC_MODEL_PREFIX = "model:";
-
-	public static final String INFO_FEDORA_PREFIX = "info:fedora/";
+	public static String pathToNewArticlesDir = "";
 
 	private static Map<String, String> uuidIsOwnedByUuid;
 
@@ -52,8 +51,6 @@ public class Main {
 	private static List<String> allFilePaths;
 
 	private static Map<String, MyXmlFile> xmlFiles;
-
-	public static final String PATH_TO_NEW_ARTICLES_DIR = "/home/job/Desktop/newArticles";
 
 	private static XPathFactory xpfactory;
 
@@ -64,8 +61,11 @@ public class Main {
 	 * @throws ParserConfigurationException
 	 * @throws XPathExpressionException
 	 */
-	public static void main(String[] args) throws ParserConfigurationException,
-			SAXException, IOException, XPathExpressionException {
+	public static void main(String[] args) throws IOException,
+			XPathExpressionException, ParserConfigurationException,
+			SAXException {
+
+		checkArgs(args);
 
 		System.out.println("Processing...");
 
@@ -73,27 +73,56 @@ public class Main {
 		articleFiles = new HashMap<String, String>();
 		allFilePaths = new ArrayList<String>();
 		xmlFiles = new HashMap<String, MyXmlFile>();
-		scanDirectoryStructure(DIR_PATH);
+		scanDirectoryStructure(dirPath);
 
 		System.out.println("Parsing...");
 		parseFiles();
-
 		System.out.println("Refilling...");
-		int numberTodo = articleFiles.size();
-		for (String uuidArticle : articleFiles.keySet()) {
-			refillArticle(uuidArticle);
-			System.out.println("To refill: " + --numberTodo);
-		}
-
+		refillArticles();
 		System.out.println("Done!");
-
 	}
 
-	private static void scanDirectoryStructure(String dirPath)
-			throws ParserConfigurationException, SAXException, IOException,
-			XPathExpressionException {
+	private static void refillArticles() throws IOException {
+		int numberToIncrement = articleFiles.size()
+				/ Constants.PROGRESS_BAR_LENGTH;
+		int increment = 0;
+		int count = 0;
+		String toWrite = getProgressBar(increment, false);
 
-		// System.out.println(dirPath);
+		for (String uuidArticle : articleFiles.keySet()) {
+			if (count >= numberToIncrement) {
+				increment++;
+				toWrite = getProgressBar(increment, false);
+				count = 0;
+			} else {
+				count++;
+			}
+			System.out.write(toWrite.getBytes());
+			refillArticle(uuidArticle);
+		}
+		System.out.write(getProgressBar(Constants.PROGRESS_BAR_LENGTH, true)
+				.getBytes());
+	}
+
+	private static void checkArgs(String[] args) {
+		if (args.length < 2) {
+			System.err.println("There are missing some argument(s)!");
+			return;
+		}
+
+		dirPath = args[0];
+		if (!new File(dirPath).exists()) {
+			System.err.println("The input directory does not exists!");
+			return;
+		}
+
+		pathToNewArticlesDir = args[1];
+		if (!new File(pathToNewArticlesDir).exists()) {
+			new File(pathToNewArticlesDir).mkdirs();
+		}
+	}
+
+	private static void scanDirectoryStructure(String dirPath) {
 
 		File path = new File(dirPath);
 		FileFilter dirFilter = new FileFilter() {
@@ -104,7 +133,6 @@ public class Main {
 			}
 
 		};
-		// System.out.println(dirPath);
 		File[] dirs = path.listFiles(dirFilter);
 		if (dirs != null) {
 			for (File dir : dirs) {
@@ -118,7 +146,7 @@ public class Main {
 			public boolean accept(File pathname) {
 				return pathname.isFile()
 						&& pathname.getName().toLowerCase().endsWith(
-								"." + SUFFIX.toLowerCase());
+								"." + Constants.SUFFIX.toLowerCase());
 			}
 		};
 
@@ -142,8 +170,6 @@ public class Main {
 	}
 
 	private static void refillArticle(String uuidArticle) {
-
-		// System.out.println(uuidArticle);
 
 		PeriodicumXmlFile periodical = null;
 		ItemVolumeSupplXmlFile periodicalItem = null;
@@ -195,7 +221,7 @@ public class Main {
 					.parse(new File(articleFiles.get(uuidArticle)));
 
 			XPathExpression all = makeNSAwareXpath().compile(
-					"//*[name()=\'mods:mods\']");
+					Constants.XPATH_MODS);
 			NodeList nodesOfStream = (NodeList) all.evaluate(document,
 					XPathConstants.NODESET);
 
@@ -310,8 +336,9 @@ public class Main {
 
 			DOMSource source = new DOMSource(doc);
 			StreamResult result = new StreamResult(new File(
-					PATH_TO_NEW_ARTICLES_DIR + "/"
-							+ uuid.substring("uuid:".length()) + "." + SUFFIX));
+					pathToNewArticlesDir + "/"
+							+ uuid.substring("uuid:".length()) + "."
+							+ Constants.SUFFIX));
 
 			transformer.transform(source, result);
 
@@ -334,13 +361,39 @@ public class Main {
 		return builder.parse(is);
 	}
 
+	private static String getProgressBar(int increment, boolean isLast) {
+
+		StringBuffer toWriteBuffer = new StringBuffer("|");
+		for (int i = 0; i < Constants.PROGRESS_BAR_LENGTH - 2; i++) {
+			if (i <= increment)
+				toWriteBuffer.append("=");
+			else
+				toWriteBuffer.append(" ");
+		}
+		toWriteBuffer.append("|" + (!isLast ? "\r" : "\n"));
+
+		return toWriteBuffer.toString();
+	}
+
 	private static void parseFiles() throws ParserConfigurationException,
 			SAXException, IOException, XPathExpressionException {
 
-		int numberToParse = allFilePaths.size();
+		int numberToIncrement = allFilePaths.size()
+				/ Constants.PROGRESS_BAR_LENGTH;
+		int increment = 0;
+		int count = 0;
+		String toWrite = getProgressBar(increment, false);
 
 		for (String filePath : allFilePaths) {
-			System.out.println("To parse: " + numberToParse--);
+
+			if (count >= numberToIncrement) {
+				increment++;
+				toWrite = getProgressBar(increment, false);
+				count = 0;
+			} else {
+				count++;
+			}
+			System.out.write(toWrite.getBytes());
 
 			File file = new File(filePath);
 			FileInputStream fileStream = new FileInputStream(file);
@@ -349,30 +402,30 @@ public class Main {
 			// System.err.println(file.getPath());
 
 			List<String> typeList = getElementsContent(document,
-					"//*[name()=\'dc:type\']");
+					Constants.XPATH_DC_TYPE);
 			if (typeList.size() == 0)
-				throw new RuntimeException("there is no model");
+				throw new RuntimeException("There is no model");
 
 			String modelString = null;
 			for (String type : typeList) {
-				if (type.startsWith(DC_MODEL_PREFIX)) {
+				if (type.startsWith(Constants.DC_MODEL_PREFIX)) {
 					modelString = type;
 					break;
 				}
 			}
 
 			if (modelString == null)
-				throw new RuntimeException("there is no model");
+				throw new RuntimeException("There is no model");
 
 			DigitalObjectModel model = Constants.DigitalObjectModel
 					.parseString(modelString
-							.substring(DC_MODEL_PREFIX.length()), file
-							.getPath());
+							.substring(Constants.DC_MODEL_PREFIX.length()),
+							file.getPath());
 
 			if (model != DigitalObjectModel.PAGE) {
 
 				List<String> uuidList = getElementsContent(document,
-						"//*[name()=\'mods:mods\']/*[name()=\'mods:identifier\'][@type=\'uuid\']");
+						Constants.XPATH_MODS_UUID);
 
 				if (uuidList.size() == 0)
 					throw new RuntimeException("there is no uuid");
@@ -391,9 +444,8 @@ public class Main {
 							childrenList, uuid);
 
 					String title = null;
-					List<String> titleList = getElementsContent(
-							document,
-							"//*[name()=\'mods:mods\']/*[name()=\'mods:titleInfo\']/*[name()=\'mods:title\']");
+					List<String> titleList = getElementsContent(document,
+							Constants.XPATH_MODS_TITLE);
 					if (titleList != null && titleList.size() > 0)
 						title = titleList.get(0);
 
@@ -419,16 +471,14 @@ public class Main {
 								childrenList, uuid);
 
 					String partNumber = null;
-					List<String> partNumList = getElementsContent(
-							document,
-							"//*[name()=\'mods:mods\']/*[name()=\'mods:titleInfo\']/*[name()=\'mods:partNumber\']");
+					List<String> partNumList = getElementsContent(document,
+							Constants.XPATH_MODS_PART_NUMBER);
 					if (partNumList != null && partNumList.size() > 0)
 						partNumber = partNumList.get(0);
 
 					String dateIssued = null;
-					List<String> dateList = getElementsContent(
-							document,
-							"//*[name()=\'mods:mods\']/*[name()=\'mods:originInfo\']/*[name()=\'mods:dateIssued\']");
+					List<String> dateList = getElementsContent(document,
+							Constants.XPATH_MODS_DATE_ISSUES);
 					if (dateList != null && dateList.size() > 0)
 						dateIssued = dateList.get(0);
 
@@ -443,12 +493,15 @@ public class Main {
 				}
 			}
 		}
+		System.out.write(getProgressBar(Constants.PROGRESS_BAR_LENGTH, true)
+				.getBytes());
 	}
 
 	private static void removeInfoFedoraPrefix(List<String> toParse,
 			List<String> children, String parentUuid) {
 		for (String uuidToParse : toParse) {
-			String uuid = uuidToParse.substring(INFO_FEDORA_PREFIX.length());
+			String uuid = uuidToParse.substring(Constants.INFO_FEDORA_PREFIX
+					.length());
 			children.add(uuid);
 			uuidIsOwnedByUuid.put(uuid, parentUuid);
 		}
@@ -467,10 +520,6 @@ public class Main {
 
 			for (int i = 0; i < nodesOfStream.getLength(); i++) {
 				textContents.add(nodesOfStream.item(i).getTextContent());
-
-				// System.out.println(xPath + "   " + i + " "
-				// + nodesOfStream.item(i).getNodeName() + "  "
-				// + nodesOfStream.item(i).getTextContent());
 			}
 		}
 		return textContents;
@@ -479,7 +528,7 @@ public class Main {
 	public static Map<String, String> getIdentifiers(Document foxmlDocument)
 			throws XPathExpressionException {
 		XPathExpression all = makeNSAwareXpath().compile(
-				"//*[name()=\'mods:mods\']/*[name()=\'mods:identifier\']");
+				Constants.XPATH_MODS_IDENTIFIER);
 
 		NodeList nodesOfStream = (NodeList) all.evaluate(foxmlDocument,
 				XPathConstants.NODESET);
@@ -488,9 +537,6 @@ public class Main {
 		if (nodesOfStream != null && nodesOfStream.getLength() != 0) {
 			for (int i = 0; i < nodesOfStream.getLength(); i++) {
 				NamedNodeMap attributes = nodesOfStream.item(i).getAttributes();
-				// System.err.println(attributes.getNamedItem("type")
-				// .getTextContent()
-				// + "   " + nodesOfStream.item(i).getTextContent());
 				identifiers.put(attributes.getNamedItem("type")
 						.getTextContent(), nodesOfStream.item(i)
 						.getTextContent());
@@ -509,7 +555,6 @@ public class Main {
 			xpfactory = XPathFactory.newInstance();
 		}
 		XPath xpath = xpfactory.newXPath();
-		// xpath.setNamespaceContext(new FedoraNamespaceContext());
 		return xpath;
 	}
 }
