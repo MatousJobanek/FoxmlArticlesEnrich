@@ -104,13 +104,28 @@ public class Main {
 				.getBytes());
 	}
 
+	private static void printHelp() {
+		System.out.println();
+
+		System.out
+				.println("Example how to run: java -Xms512m -Xmx2048m -jar /path/to/jar/foxmlArticlesEnrich.jar /path/to/input/dir /path/to/output/dir");
+
+		System.out
+				.println("The first argument has to be the input direcotry(where are the XMLs)");
+		System.out
+				.println("The second argument has to be the output direcotry(to save the new article-XMLs)");
+		System.out.println();
+	}
+
 	private static void checkArgs(String[] args) {
 		if (args.length < 2) {
+			printHelp();
 			throw new RuntimeException("There are missing some argument(s)!");
 		}
 
 		dirPath = args[0];
 		if (!new File(dirPath).exists()) {
+			printHelp();
 			throw new RuntimeException("The input directory does not exists!");
 		}
 
