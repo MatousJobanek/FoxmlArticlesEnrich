@@ -1,4 +1,4 @@
 AMCEA
 ====
 
-Program for Enrichment of articles After the Conversion from Mets to FOXML
+Program for enrichment of articles after the conversion from Mets to FOXML
