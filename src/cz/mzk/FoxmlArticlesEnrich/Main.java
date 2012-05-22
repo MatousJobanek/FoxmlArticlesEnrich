@@ -40,9 +40,9 @@ import cz.mzk.FoxmlArticlesEnrich.Constants.FedoraRelationship;
  */
 public class Main {
 
-	public static String dirPath = "";
+	public static String dirPath;
 
-	public static String pathToNewArticlesDir = "";
+	public static String pathToNewArticlesDir;
 
 	private static Map<String, String> uuidIsOwnedByUuid;
 
@@ -106,14 +106,12 @@ public class Main {
 
 	private static void checkArgs(String[] args) {
 		if (args.length < 2) {
-			System.err.println("There are missing some argument(s)!");
-			return;
+			throw new RuntimeException("There are missing some argument(s)!");
 		}
 
 		dirPath = args[0];
 		if (!new File(dirPath).exists()) {
-			System.err.println("The input directory does not exists!");
-			return;
+			throw new RuntimeException("The input directory does not exists!");
 		}
 
 		pathToNewArticlesDir = args[1];
@@ -394,107 +392,106 @@ public class Main {
 				count++;
 			}
 			System.out.write(toWrite.getBytes());
+			parseFile(filePath);
+		}
+		System.out.write(getProgressBar(Constants.PROGRESS_BAR_LENGTH, true)
+				.getBytes());
+	}
 
-			File file = new File(filePath);
-			FileInputStream fileStream = new FileInputStream(file);
-			Document document = parseDocument(fileStream);
+	private static void parseFile(String filePath)
+			throws ParserConfigurationException, SAXException, IOException,
+			XPathExpressionException {
+		File file = new File(filePath);
+		FileInputStream fileStream = new FileInputStream(file);
+		Document document = parseDocument(fileStream);
 
-			// System.err.println(file.getPath());
+		List<String> typeList = getElementsContent(document,
+				Constants.XPATH_DC_TYPE);
+		if (typeList.size() == 0)
+			throw new RuntimeException("There is no model");
 
-			List<String> typeList = getElementsContent(document,
-					Constants.XPATH_DC_TYPE);
-			if (typeList.size() == 0)
-				throw new RuntimeException("There is no model");
-
-			String modelString = null;
-			for (String type : typeList) {
-				if (type.startsWith(Constants.DC_MODEL_PREFIX)) {
-					modelString = type;
-					break;
-				}
+		String modelString = null;
+		for (String type : typeList) {
+			if (type.startsWith(Constants.DC_MODEL_PREFIX)) {
+				modelString = type;
+				break;
 			}
+		}
 
-			if (modelString == null)
-				throw new RuntimeException("There is no model");
+		if (modelString == null)
+			throw new RuntimeException("There is no model");
 
-			DigitalObjectModel model = Constants.DigitalObjectModel
-					.parseString(modelString
-							.substring(Constants.DC_MODEL_PREFIX.length()),
-							file.getPath());
+		DigitalObjectModel model = Constants.DigitalObjectModel.parseString(
+				modelString.substring(Constants.DC_MODEL_PREFIX.length()), file
+						.getPath());
 
-			if (model != DigitalObjectModel.PAGE) {
+		if (model != DigitalObjectModel.PAGE) {
 
-				List<String> uuidList = getElementsContent(document,
-						Constants.XPATH_MODS_UUID);
+			List<String> uuidList = getElementsContent(document,
+					Constants.XPATH_MODS_UUID);
 
-				if (uuidList.size() == 0)
-					throw new RuntimeException("there is no uuid");
-				String uuid = "uuid:" + uuidList.get(0);
+			if (uuidList.size() == 0)
+				throw new RuntimeException("there is no uuid");
+			String uuid = "uuid:" + uuidList.get(0);
 
-				List<String> childrenList = new ArrayList<String>();
-				if (model == DigitalObjectModel.PERIODICAL) {
+			List<String> childrenList = new ArrayList<String>();
+			if (model == DigitalObjectModel.PERIODICAL) {
 
+				removeInfoFedoraPrefix(getElementsContent(document,
+						FedoraRelationship.hasItem
+								.getXPathNamespaceAwareQuery()), childrenList,
+						uuid);
+				removeInfoFedoraPrefix(getElementsContent(document,
+						FedoraRelationship.hasVolume
+								.getXPathNamespaceAwareQuery()), childrenList,
+						uuid);
+
+				String title = null;
+				List<String> titleList = getElementsContent(document,
+						Constants.XPATH_MODS_TITLE);
+				if (titleList != null && titleList.size() > 0)
+					title = titleList.get(0);
+
+				xmlFiles.put(uuid, new PeriodicumXmlFile(uuid, model,
+						childrenList, title, getIdentifiers(document)));
+
+			} else if (model == DigitalObjectModel.PERIODICALVOLUME
+					|| model == DigitalObjectModel.PERIODICALITEM
+					|| model == DigitalObjectModel.SUPPLEMENT) {
+				removeInfoFedoraPrefix(getElementsContent(document,
+						FedoraRelationship.hasInternalPart
+								.getXPathNamespaceAwareQuery()), childrenList,
+						uuid);
+				removeInfoFedoraPrefix(getElementsContent(document,
+						FedoraRelationship.hasIntCompPart
+								.getXPathNamespaceAwareQuery()), childrenList,
+						uuid);
+
+				if (model == DigitalObjectModel.PERIODICALVOLUME)
 					removeInfoFedoraPrefix(getElementsContent(document,
 							FedoraRelationship.hasItem
 									.getXPathNamespaceAwareQuery()),
 							childrenList, uuid);
-					removeInfoFedoraPrefix(getElementsContent(document,
-							FedoraRelationship.hasVolume
-									.getXPathNamespaceAwareQuery()),
-							childrenList, uuid);
 
-					String title = null;
-					List<String> titleList = getElementsContent(document,
-							Constants.XPATH_MODS_TITLE);
-					if (titleList != null && titleList.size() > 0)
-						title = titleList.get(0);
+				String partNumber = null;
+				List<String> partNumList = getElementsContent(document,
+						Constants.XPATH_MODS_PART_NUMBER);
+				if (partNumList != null && partNumList.size() > 0)
+					partNumber = partNumList.get(0);
 
-					xmlFiles.put(uuid, new PeriodicumXmlFile(uuid, model,
-							childrenList, title, getIdentifiers(document)));
+				String dateIssued = null;
+				List<String> dateList = getElementsContent(document,
+						Constants.XPATH_MODS_DATE_ISSUES);
+				if (dateList != null && dateList.size() > 0)
+					dateIssued = dateList.get(0);
 
-				} else if (model == DigitalObjectModel.PERIODICALVOLUME
-						|| model == DigitalObjectModel.PERIODICALITEM
-						|| model == DigitalObjectModel.SUPPLEMENT) {
-					removeInfoFedoraPrefix(getElementsContent(document,
-							FedoraRelationship.hasInternalPart
-									.getXPathNamespaceAwareQuery()),
-							childrenList, uuid);
-					removeInfoFedoraPrefix(getElementsContent(document,
-							FedoraRelationship.hasIntCompPart
-									.getXPathNamespaceAwareQuery()),
-							childrenList, uuid);
+				xmlFiles.put(uuid, new ItemVolumeSupplXmlFile(uuid, model,
+						childrenList, partNumber, dateIssued));
 
-					if (model == DigitalObjectModel.PERIODICALVOLUME)
-						removeInfoFedoraPrefix(getElementsContent(document,
-								FedoraRelationship.hasItem
-										.getXPathNamespaceAwareQuery()),
-								childrenList, uuid);
-
-					String partNumber = null;
-					List<String> partNumList = getElementsContent(document,
-							Constants.XPATH_MODS_PART_NUMBER);
-					if (partNumList != null && partNumList.size() > 0)
-						partNumber = partNumList.get(0);
-
-					String dateIssued = null;
-					List<String> dateList = getElementsContent(document,
-							Constants.XPATH_MODS_DATE_ISSUES);
-					if (dateList != null && dateList.size() > 0)
-						dateIssued = dateList.get(0);
-
-					xmlFiles.put(uuid, new ItemVolumeSupplXmlFile(uuid, model,
-							childrenList, partNumber, dateIssued));
-
-				} else if (model == DigitalObjectModel.ARTICLE) {
-					if (articleFiles.keySet().contains(uuid)) {
-						System.err.println(uuid + "   " + file.getPath());
-					}
-					articleFiles.put(uuid, file.getAbsolutePath());
-				}
+			} else if (model == DigitalObjectModel.ARTICLE) {
+				articleFiles.put(uuid, file.getAbsolutePath());
 			}
 		}
-		System.out.write(getProgressBar(Constants.PROGRESS_BAR_LENGTH, true)
-				.getBytes());
 	}
 
 	private static void removeInfoFedoraPrefix(List<String> toParse,
